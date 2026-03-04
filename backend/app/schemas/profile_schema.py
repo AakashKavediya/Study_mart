@@ -1,7 +1,7 @@
 from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, EmailStr, field_validator, Field, HttpUrl
 from datetime import datetime
-from typing import List
+from typing import List,Optional
 
 """
 Information required:
@@ -29,27 +29,34 @@ Information required:
 # USER PROFILE SCHEMA
 #----------------------------
 
+
 class UserProfilePublic(BaseModel):
     id: str = Field(..., alias="_id")
 
-    name: str = Field(min_length=2, max_length=50)
+    name: str
     email: EmailStr
 
-    profile_image: HttpUrl | None = None
-    bio: str | None = Field(default=None, max_length=500)
+    profile_image: Optional[HttpUrl] = None
+    bio: Optional[str] = None
 
-    skills: List[str] = Field(default_factory=list, max_length=20)
+    skills: List[str] = []
 
-    rating: float = Field(ge=0, le=5)
-    total_reviews: int = Field(ge=0)
+    rating: Optional[float] = 0
+    total_reviews: Optional[int] = 0
 
-    products_sold_count: int = Field(ge=0)
-    active_listings_count: int = Field(ge=0)
+    products_sold_count: Optional[int] = 0
+    active_listings_count: Optional[int] = 0
 
-    is_verified: bool
+    is_verified: Optional[bool] = False
 
     created_at: datetime
-    last_active: datetime
+    last_active: Optional[datetime] = None
 
     class Config:
         populate_by_name = True
+
+class UpdateProfile(BaseModel):
+    name: Optional[str] = None
+    profile_image: Optional[HttpUrl] = None
+    bio: Optional[str] = None
+    skills: Optional[List[str]] = None
