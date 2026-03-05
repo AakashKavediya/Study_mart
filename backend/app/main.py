@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
+from bson.errors import InvalidId
 from pydantic import BaseModel, EmailStr, field_validator
 from jose import jwt, JWTError
 from fastapi.concurrency import run_in_threadpool
@@ -18,6 +19,8 @@ import re
 
 from app.schemas.user_schema import CreateUser, LoginSchema, LogoutSchema
 from app.schemas.profile_schema import UserProfilePublic, UpdateProfile
+from app.schemas.product_schema import ProductCreate, ProductUpdate, ProductResponse
+from app.schemas.lost_and_found_schema import LostCreate, LostUpdate
 
 #--------------------
 # Importing Database
@@ -33,6 +36,9 @@ from app.mongodb.connect import connectdb
 db = connectdb()
 signup_collection = db["signup"]
 profile_collection = db["user-profile"]
+product_collection = db["products"]
+lost_and_found_collection = db["lost_and_found"]
+lost_and_found_comment_collection = db["lost_and_found_comment"]
 
 
 
@@ -295,7 +301,7 @@ USER PROFILE APIs
 | GET    | `/users/my-products`     | Get my listings       |
 | GET    | `/users/my-lost-posts`   | My lost & found posts |
 | POST   | `/users/block/{user_id}` | Block user            |
-| GET    | `/users/search`          | Search users          |
+| GET    | `/users/search`          | Search users          | Done
 
 """
 
@@ -479,11 +485,11 @@ Core Product Management
 
 | Method | Endpoint                           | Purpose                            |
 | ------ | ---------------------------------- | ---------------------------------- |
-| POST   | `/products`                        | Create product                     |
-| GET    | `/products`                        | Get all products (with pagination) |
-| GET    | `/products/{product_id}`           | Get single product                 |
-| PUT    | `/products/{product_id}`           | Edit product                       |
-| DELETE | `/products/{product_id}`           | Delete product                     |
+| POST   | `/products`                        | Create product                     | Done
+| GET    | `/products`                        | Get all products (with pagination) | Done
+| GET    | `/products/{product_id}`           | Get single product                 | Done
+| PUT    | `/products/{product_id}`           | Edit product                       | Done
+| DELETE | `/products/{product_id}`           | Delete product                     | Done
 | PATCH  | `/products/{product_id}/mark-sold` | Mark product sold                  |
 
 """
@@ -491,7 +497,230 @@ Core Product Management
 
 
 
+#----------------------------
+# API FOR CREATE PRODUCT
+#----------------------------
 
+
+@app.post("/products", status_code=201)
+async def post_product(
+    product: ProductCreate,
+    current_user = Depends(get_current_user)
+):
+
+    seller_id = current_user["_id"]
+
+    product_info = {
+        "title": product.title,
+        "description": product.description,
+        "category": product.category,
+        "price": product.price,
+        "condition": product.condition,
+        "negotiable": product.negotiable,
+        "images": product.images,
+        "campus": product.campus,
+        "location": product.location,
+
+        "seller_id": seller_id,
+
+        "status": "active",
+        "created_at": datetime.now()
+    }
+
+    result = await run_in_threadpool(
+        product_collection.insert_one,
+        product_info
+    )
+
+    return {
+        "status": "ok",
+        "product_id": str(result.inserted_id)
+    }
+
+
+
+
+
+
+
+#----------------------------
+# API FOR DELETE PRODUCT
+#----------------------------
+
+
+@app.delete("/products/{product_id}", status_code=status.HTTP_200_OK)
+async def delete_product(
+    product_id: str,
+    current_user=Depends(get_current_user)
+):
+
+    seller_id = current_user["_id"]
+
+    try:
+        object_id = ObjectId(product_id)
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid product id"
+        )
+
+    result = await run_in_threadpool(
+        product_collection.delete_one,
+        {
+            "_id": object_id,
+            "seller_id": seller_id
+        }
+    )
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found or you are not the owner"
+        )
+
+    return {
+        "status": "ok",
+        "message": "Product deleted successfully"
+    }
+
+
+
+
+
+
+#----------------------------
+# API FOR GET ALL PRODUCT
+#----------------------------
+
+
+
+@app.get("/products", status_code=200)
+async def get_products(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=50)
+):
+
+    skip = (page - 1) * limit
+
+    products = await run_in_threadpool(
+        lambda: list(
+            product_collection
+            .find({"status": "active"})
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+    )
+
+    for p in products:
+        p["_id"] = str(p["_id"])
+        p["seller_id"] = str(p["seller_id"])
+
+    return {
+        "status": "ok",
+        "page": page,
+        "limit": limit,
+        "count": len(products),
+        "products": products
+    }
+
+
+
+
+#----------------------------
+# API FOR GET ALL SINGLE PRODUCT
+#----------------------------
+
+
+@app.get("/products/{product_id}", status_code=status.HTTP_200_OK)
+async def get_single_product(product_id: str):
+
+    # Validate ObjectId
+    try:
+        obj_id = ObjectId(product_id)
+    except InvalidId:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid product id"
+        )
+
+    # Fetch product
+    product = await run_in_threadpool(
+        product_collection.find_one,
+        {"_id": obj_id}
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found"
+        )
+
+    # Convert ObjectIds to string
+    product["_id"] = str(product["_id"])
+    product["seller_id"] = str(product["seller_id"])
+
+    return {
+        "status": "ok",
+        "product": product
+    }
+
+
+
+
+#----------------------------
+# API FOR EDIT THE PRODUCT
+#----------------------------
+
+
+
+@app.put("/products/{product_id}", status_code=status.HTTP_200_OK)
+async def update_product(
+    product_id: str,
+    product: ProductUpdate,
+    current_user = Depends(get_current_user)
+):
+
+    # Validate ID
+    try:
+        obj_id = ObjectId(product_id)
+    except InvalidId:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid product id"
+        )
+
+    seller_id = current_user["_id"]
+
+    update_data = product.dict(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(
+            status_code=400,
+            detail="No fields provided to update"
+        )
+
+    update_data["updated_at"] = datetime.utcnow()
+
+    result = await run_in_threadpool(
+        product_collection.update_one,
+        {
+            "_id": obj_id,
+            "seller_id": seller_id
+        },
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found or you are not the owner"
+        )
+
+    return {
+        "status": "ok",
+        "message": "Product updated successfully"
+    }
 
 """
 PRODUCT (MARKETPLACE) APIs
@@ -500,12 +729,53 @@ Product Filtering & Search
 
 | Method | Endpoint                        | Purpose            |
 | ------ | ------------------------------- | ------------------ |
-| GET    | `/products/search`              | Search products    |
+| GET    | `/products/search`              | Search products    | Done
 | GET    | `/products/category/{category}` | Filter by category |
 | GET    | `/products/user/{user_id}`      | Products by seller |
 
 """
 
+
+
+#----------------------------
+# API FOR SEARCH ALL PRODUCTS
+#----------------------------
+
+@app.get("/products/search", status_code=status.HTTP_200_OK)
+async def search_products(
+    q: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=50)
+):
+
+    skip = (page - 1) * limit
+
+    products = await run_in_threadpool(
+        lambda: list(
+            product_collection.find(
+                {
+                    "status": "active",
+                    "title": {"$regex": q, "$options": "i"}
+                }
+            )
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+    )
+
+    for p in products:
+        p["_id"] = str(p["_id"])
+        p["seller_id"] = str(p["seller_id"])
+
+    return {
+        "status": "ok",
+        "query": q,
+        "page": page,
+        "limit": limit,
+        "count": len(products),
+        "products": products
+    }
 
 
 
@@ -534,10 +804,10 @@ IMAGE UPLOAD APIs
 
 | Method | Endpoint                | Purpose                |
 | ------ | ----------------------- | ---------------------- |
-| POST   | `/upload/product-image` | Upload product images  |
-| POST   | `/upload/profile-image` | Upload profile image   |
-| POST   | `/upload/lost-image`    | Upload lost item image |
-| POST   | `/upload/event-image`   | Upload event image     |
+| POST   | `/upload/product-image` | Upload product images  |# not requied rn
+| POST   | `/upload/profile-image` | Upload profile image   |# not requied rn
+| POST   | `/upload/lost-image`    | Upload lost item image |# not requied rn
+| POST   | `/upload/event-image`   | Upload event image     |# not requied rn
 
 """
 
@@ -598,11 +868,11 @@ Lost Items
 
 | Method | Endpoint          | Purpose                |
 | ------ | ----------------- | ---------------------- |
-| POST   | `/lost`           | Create lost/found post |
-| GET    | `/lost`           | Get all lost posts     |
-| GET    | `/lost/{lost_id}` | Get single post        |
-| PUT    | `/lost/{lost_id}` | Update lost post       |
-| DELETE | `/lost/{lost_id}` | Delete post            |
+| POST   | `/lost`           | Create lost/found post | Done
+| GET    | `/lost`           | Get all lost posts     | Done
+| GET    | `/lost/{lost_id}` | Get single post        | Done
+| PUT    | `/lost/{lost_id}` | Update lost post       | Done
+| DELETE | `/lost/{lost_id}` | Delete post            | Done
 
 """
 
@@ -610,6 +880,173 @@ Lost Items
 
 
 
+#----------------------------
+# API FOR POST LOST PRODUCT
+#----------------------------
+
+
+@app.post("/lost", status_code=201)
+async def create_lost_post(
+    post: LostCreate,
+    current_user=Depends(get_current_user)
+):
+
+    lost_post = {
+        "title": post.title,
+        "description": post.description,
+        "category": post.category,
+        "location": post.location,
+        "campus": post.campus,
+        "contact_info": post.contact_info,
+
+        "user_id": current_user["_id"],
+
+        "status": "active",
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+
+    result = await run_in_threadpool(
+        lost_and_found_collection.insert_one,
+        lost_post
+    )
+
+    return {
+        "status": "ok",
+        "lost_id": str(result.inserted_id)
+    }
+
+
+
+
+
+#----------------------------
+# API FOR LIST OF ALL LOST PRODUCT
+#----------------------------
+
+
+@app.get("/lost")
+async def get_lost_posts(
+    page: int = 1,
+    limit: int = 10
+):
+
+    skip = (page - 1) * limit
+
+    posts = await run_in_threadpool(
+        lambda: list(
+            lost_and_found_collection
+            .find({"status": "active"})
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+    )
+
+    for p in posts:
+        p["_id"] = str(p["_id"])
+        p["user_id"] = str(p["user_id"])
+
+    return {
+        "status": "ok",
+        "posts": posts
+    }
+
+
+
+#----------------------------
+# API FOR SEARCH FOR SINGLE PRODUCTS
+#----------------------------
+
+
+@app.get("/lost/{lost_id}")
+async def get_single_lost_post(lost_id: str):
+
+    try:
+        obj_id = ObjectId(lost_id)
+    except:
+        raise HTTPException(400, "Invalid lost id")
+
+    post = await run_in_threadpool(
+        lost_and_found_collection.find_one,
+        {"_id": obj_id}
+    )
+
+    if not post:
+        raise HTTPException(404, "Post not found")
+
+    post["_id"] = str(post["_id"])
+    post["user_id"] = str(post["user_id"])
+
+    return post
+
+
+
+
+
+#----------------------------
+# API FOR UPDATE THE LOST PRODUCT   
+#----------------------------
+
+
+@app.put("/lost/{lost_id}")
+async def update_lost_post(
+    lost_id: str,
+    data: LostUpdate,
+    current_user=Depends(get_current_user)
+):
+
+    update_data = data.dict(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(400, "No fields to update")
+
+    update_data["updated_at"] = datetime.utcnow()
+
+    result = await run_in_threadpool(
+        lost_and_found_collection.update_one,
+        {
+            "_id": ObjectId(lost_id),
+            "user_id": current_user["_id"]
+        },
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(
+            403,
+            "You are not allowed to edit this post"
+        )
+
+    return {"status": "ok"}
+
+
+
+#----------------------------
+# API FOR DELETE LOST PRODUCTS
+#----------------------------
+
+@app.delete("/lost/{lost_id}")
+async def delete_lost_post(
+    lost_id: str,
+    current_user=Depends(get_current_user)
+):
+
+    result = await run_in_threadpool(
+        lost_and_found_collection.delete_one,
+        {
+            "_id": ObjectId(lost_id),
+            "user_id": current_user["_id"]
+        }
+    )
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            403,
+            "You are not allowed to delete this post"
+        )
+
+    return {"status": "ok", "message": "Post deleted"}
 
 
 
