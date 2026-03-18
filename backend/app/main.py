@@ -807,7 +807,7 @@ IMAGE UPLOAD APIs
 | POST   | `/upload/product-image` | Upload product images  |# not requied rn
 | POST   | `/upload/profile-image` | Upload profile image   |# not requied rn
 | POST   | `/upload/lost-image`    | Upload lost item image |# not requied rn
-| POST   | `/upload/event-image`   | Upload event image     |# not requied rn
+
 
 """
 

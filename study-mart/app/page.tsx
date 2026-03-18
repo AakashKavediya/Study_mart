@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/Button';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-accent/20 via-background to-background relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_top_right,var(--tw-gradient-stops))] from-accent/20 via-background to-background relative overflow-hidden">
       
       {/* Decorative Blobs */}
       <div className="absolute top-20 -left-20 w-72 h-72 bg-accent/20 rounded-full blur-3xl opacity-50" />
@@ -33,7 +33,7 @@ export default function LandingPage() {
       </main>
 
       {/* Feature highlight abstract grid */}
-      <div className="absolute bottom-0 w-full h-32 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 w-full h-32 bg-linear-to-t from-background to-transparent pointer-events-none" />
     </div>
   );
 }

@@ -51,7 +51,7 @@ export function LostItemCard({ item }: LostItemCardProps) {
             alt={item.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-t from-[#1A1A1A] via-transparent to-transparent" />
 
           {/* Badge overlay */}
           <div className={cn(
@@ -144,7 +144,7 @@ export function LostItemCard({ item }: LostItemCardProps) {
         <div
           className={cn(
             'overflow-hidden transition-all duration-300 ease-in-out',
-            isCommentsOpen ? 'max-h-[600px] mt-4 opacity-100' : 'max-h-0 opacity-0'
+            isCommentsOpen ? 'max-h-96 mt-4 opacity-100' : 'max-h-0 opacity-0'
           )}
         >
           <div className="border-t border-[#2a2a2a] pt-4 space-y-3">
